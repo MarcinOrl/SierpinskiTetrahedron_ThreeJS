@@ -1,28 +1,7 @@
-// src/main.js
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import './style.css';
-
-/* --- helper: Sierpinski tetrahedron subdivide --- */
-function subdivideTetra(a, b, c, d, level, outTetras) {
-  if (level === 0) {
-    outTetras.push([a.clone(), b.clone(), c.clone(), d.clone()]);
-    return;
-  }
-
-  const ab = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
-  const ac = new THREE.Vector3().addVectors(a, c).multiplyScalar(0.5);
-  const ad = new THREE.Vector3().addVectors(a, d).multiplyScalar(0.5);
-  const bc = new THREE.Vector3().addVectors(b, c).multiplyScalar(0.5);
-  const bd = new THREE.Vector3().addVectors(b, d).multiplyScalar(0.5);
-  const cd = new THREE.Vector3().addVectors(c, d).multiplyScalar(0.5);
-
-  subdivideTetra(a, ab, ac, ad, level - 1, outTetras);
-  subdivideTetra(ab, b, bc, bd, level - 1, outTetras);
-  subdivideTetra(ac, bc, c, cd, level - 1, outTetras);
-  subdivideTetra(ad, bd, cd, d, level - 1, outTetras);
-}
 
 /* --- scena, kamera, renderer --- */
 const container = document.getElementById('app');
@@ -79,7 +58,6 @@ const params = {
   explode: false,
   explodeSpeed: 0.3,
   explodeAmount: 0.1,
-  frame: () => frameToGeometry(),
   resetCamera: () => resetCamera()
 };
 
@@ -96,40 +74,29 @@ gui.add(params, 'showEdges').name('Show edges').onChange(v => {
 gui.add(params, 'explode').name('Explode');
 gui.add(params, 'explodeSpeed', 0.1, 3.0, 0.01).name('Explode speed');
 gui.add(params, 'explodeAmount', 0.0, 0.5, 0.01).name('Explode amount');
-gui.add(params, 'frame').name('Frame geometry');
 gui.add(params, 'resetCamera').name('Reset camera');
 
-/* --- dispose --- */
-function disposeIfExists() {
-  if (groupTetras) {
-    groupTetras.children.forEach(child => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material && child.material !== material) child.material.dispose();
-    });
-    scene.remove(groupTetras);
-    groupTetras = null;
+/* --- Rekurencyjne dzielenie tetra (Sierpinski) --- */
+function subdivideTetra(a, b, c, d, level, outTetras) {
+  if (level === 0) {
+    outTetras.push([a.clone(), b.clone(), c.clone(), d.clone()]);
+    return;
   }
-  tetraObjects.forEach(o => {
-    if (o.edge) {
-      if (o.edge.geometry) o.edge.geometry.dispose();
-      if (o.edge.material) o.edge.material.dispose();
-    }
-  });
-  tetraObjects = [];
-  if (material) {
-    material.dispose();
-    material = null;
-  }
-  if (ground) {
-    scene.remove(ground);
-    if (ground.geometry) ground.geometry.dispose();
-    if (ground.material) ground.material.dispose();
-    ground = null;
-  }
-  geom = null;
+
+  const ab = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
+  const ac = new THREE.Vector3().addVectors(a, c).multiplyScalar(0.5);
+  const ad = new THREE.Vector3().addVectors(a, d).multiplyScalar(0.5);
+  const bc = new THREE.Vector3().addVectors(b, c).multiplyScalar(0.5);
+  const bd = new THREE.Vector3().addVectors(b, d).multiplyScalar(0.5);
+  const cd = new THREE.Vector3().addVectors(c, d).multiplyScalar(0.5);
+
+  subdivideTetra(a, ab, ac, ad, level - 1, outTetras);
+  subdivideTetra(ab, b, bc, bd, level - 1, outTetras);
+  subdivideTetra(ac, bc, c, cd, level - 1, outTetras);
+  subdivideTetra(ad, bd, cd, d, level - 1, outTetras);
 }
 
-/* --- Sierpinski 3D (tetrahedra) --- */
+/* --- Generuje wszystkie meshe tetra i struktury pomocnicze --- */
 function buildSierpinski3D(level, colorHex) {
   const s = 1.6;
   const h = Math.sqrt(2 / 3) * s;
@@ -240,20 +207,7 @@ function buildSierpinski3D(level, colorHex) {
   updateShadowCameraBounds();
 }
 
-/* --- frame kamera --- */
-function frameToGeometry() {
-  if (!geom || !geom.boundingSphere) return;
-  const center = geom.boundingSphere.center;
-  const radius = geom.boundingSphere.radius;
-
-  controls.target.copy(center);
-  const distance = Math.max(1.0, radius * 3.0);
-  camera.position.set(center.x + distance * 0.6, center.y + radius * 0.6, center.z + distance * 0.8);
-  camera.updateProjectionMatrix();
-  controls.update();
-}
-
-/* --- shadow bounds --- */
+/* --- Dopasowanie obszaru cieni do fraktala --- */
 function updateShadowCameraBounds() {
   if (!geom || !geom.boundingSphere) return;
   const center = geom.boundingSphere.center;
@@ -285,23 +239,52 @@ function updateShadowCameraBounds() {
   scene.add(dirLight.target);
 }
 
-/* --- reset kamery --- */
+/* --- Zwalnianie zasobów --- */
+function disposeIfExists() {
+  if (groupTetras) {
+    groupTetras.children.forEach(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material && child.material !== material) child.material.dispose();
+    });
+    scene.remove(groupTetras);
+    groupTetras = null;
+  }
+  tetraObjects.forEach(o => {
+    if (o.edge) {
+      if (o.edge.geometry) o.edge.geometry.dispose();
+      if (o.edge.material) o.edge.material.dispose();
+    }
+  });
+  tetraObjects = [];
+  if (material) {
+    material.dispose();
+    material = null;
+  }
+  if (ground) {
+    scene.remove(ground);
+    if (ground.geometry) ground.geometry.dispose();
+    if (ground.material) ground.material.dispose();
+    ground = null;
+  }
+  geom = null;
+}
+
+/* --- Reset kamery --- */
 function resetCamera() {
   camera.position.set(0, 0, 4);
   controls.target.set(0, 0, 0);
   controls.update();
 }
 
-/* --- regenerate --- */
+/* --- Przebudowa fraktala --- */
 function regenerate() {
   const level = Math.min(Math.max(0, Math.floor(params.level)), 8);
   params.level = level;
   disposeIfExists();
   buildSierpinski3D(level, params.color);
-  frameToGeometry();
 }
 
-/* --- resize --- */
+/* --- Obsługa zmiany rozmiaru okna --- */
 window.addEventListener('resize', () => {
   sizes.width = window.innerWidth;
   sizes.height = window.innerHeight;
@@ -311,12 +294,7 @@ window.addEventListener('resize', () => {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 });
 
-/* --- init --- */
-regenerate();
-controls.autoRotate = params.autoRotateCamera;
-controls.autoRotateSpeed = 2.0;
-
-/* --- animacja --- */
+/* --- Pętla animacji --- */
 const clock = new THREE.Clock();
 function tick() {
   const delta = clock.getDelta();
@@ -337,10 +315,11 @@ function tick() {
     });
   }
 
-  // sync edges rotation if you rotate group; edges are children of each mesh so they follow automatically
-
   controls.update();
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
+
+/* --- Inicjalizacja --- */
+regenerate();
 tick();
